@@ -1,16 +1,46 @@
+const express = require('express');
+const http = require('http');
+const cors = require('cors');
 const { Server } = require('socket.io');
 
-const io = new Server({
-    cors: {
-        origin: "*",
-        methods: ["GET", "POST"]
-    }
-});
+const app = express();
+app.use(cors({ origin: '*' }));
+app.use(express.json());
 
 // Store user connections
 const users = new Map();
 // Store ticket rooms and their participants
 const ticketRooms = new Map();
+
+// ============================================
+// Health Check Route (Test in Browser)
+// ============================================
+app.get('/', (req, res) => {
+    res.json({
+        status: 'ok',
+        service: 'KWI Support Chat Socket Server',
+        port: PORT,
+        activeUsers: users.size,
+        activeRooms: ticketRooms.size,
+        time: new Date().toISOString()
+    });
+});
+
+app.get('/health', (req, res) => {
+    res.json({ status: 'ok', uptime: process.uptime() });
+});
+
+const server = http.createServer(app);
+
+const io = new Server(server, {
+    cors: {
+        origin: "*",
+        methods: ["GET", "POST"]
+    },
+    transports: ['polling', 'websocket'],
+    pingTimeout: 60000,
+    pingInterval: 25000
+});
 
 io.on('connection', (socket) => {
     console.log('✅ User connected:', socket.id);
@@ -94,7 +124,7 @@ io.on('connection', (socket) => {
     });
 
     // ============================================
-    // SEND MESSAGE - ✅ FIXED: Broadcast to ALL in room
+    // SEND MESSAGE - ✅ Broadcast to ALL in room
     // ============================================
     socket.on('send-message', (data) => {
         const { ticketId, supportId, message, attachment } = data;
@@ -119,7 +149,6 @@ io.on('connection', (socket) => {
         };
 
         // ✅ IMPORTANT: Broadcast to everyone in the room (including sender)
-        // ✅ Using io.to() instead of socket.to() to include sender too
         io.to(roomName).emit('new-message', messageData);
         
         // ✅ Also send directly to the sender's socket for confirmation
@@ -243,8 +272,11 @@ io.on('connection', (socket) => {
     });
 });
 
-const PORT = process.env.PORT || 3001;
-io.listen(PORT);
-console.log(`🚀 Socket server running on port ${PORT}`);
-console.log(`📡 Waiting for connections...`);
-console.log(`🔍 Use "get-room-info" to debug rooms`);
+const PORT = process.env.PORT || 3003;
+server.listen(PORT, '0.0.0.0', () => {
+    console.log(`===============================================`);
+    console.log(`🚀 KWI Socket server running on http://0.0.0.0:${PORT}`);
+    console.log(`🔍 Browser Health Check: http://72.62.194.69:${PORT}/`);
+    console.log(`📡 Waiting for connections...`);
+    console.log(`===============================================`);
+});
